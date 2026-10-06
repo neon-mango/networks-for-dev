@@ -15,7 +15,11 @@ import (
 	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 
+	notespb "notes/grpc"
+	"notes/internal/grpcapi"
 	"notes/internal/httpapi"
 	"notes/internal/storage"
 )
@@ -39,6 +43,14 @@ func main() {
 		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
 	}
 	ln09, err := net.Listen("tcp", ":8090")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	grpcServer := grpc.NewServer()
+	notespb.RegisterNotesServiceServer(grpcServer, grpcapi.NewServer(store))
+	reflection.Register(grpcServer)
+	lnGRPC, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -67,6 +79,12 @@ func main() {
 			errCh <- err
 		}
 	}()
+	go func() {
+		log.Printf("grpc listening on %s", lnGRPC.Addr())
+		if err := grpcServer.Serve(lnGRPC); err != nil {
+			errCh <- err
+		}
+	}()
 
 	select {
 	case err := <-errCh:
@@ -86,5 +104,6 @@ func main() {
 		if err := ln09.Close(); err != nil {
 			log.Println(err)
 		}
+		grpcServer.GracefulStop()
 	}
 }
