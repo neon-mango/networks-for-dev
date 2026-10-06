@@ -1,9 +1,9 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"notes/internal/note"
 	"notes/internal/storage"
@@ -28,83 +28,94 @@ func (h *Handler) Routes() http.Handler {
 }
 
 type createRequest struct {
-	Key   string `json:"key"`
-	Title string `json:"title"`
-	Value string `json:"value"`
+	Key   string `json:"key" xml:"key"`
+	Title string `json:"title" xml:"title"`
+	Value string `json:"value" xml:"value"`
 }
 
 type updateRequest struct {
-	Value string `json:"value"`
+	Value string `json:"value" xml:"value"`
 }
 
 type errorResponse struct {
-	Error string `json:"error"`
+	Error string `json:"error" xml:"error"`
+}
+
+func wantsXML(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "application/xml")
+}
+
+func decodeBody(r *http.Request, v any) error {
+	if strings.Contains(r.Header.Get("Content-Type"), "application/xml") {
+		return decodeXML(r, v)
+	}
+	return decodeJSON(r, v)
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.store.List())
+	writeResponse(w, r, http.StatusOK, h.store.List())
 }
 
 func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var req createRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid body")
 		return
 	}
 	title, err := note.TitleFromString(req.Title)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	n, err := h.store.Create(req.Key, title, req.Value)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, n)
+	writeResponse(w, r, http.StatusCreated, n)
 }
 
 func (h *Handler) handleGet(w http.ResponseWriter, r *http.Request) {
 	title, err := note.TitleFromString(r.PathValue("title"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	n, err := h.store.Get(title)
 	if err != nil {
-		writeError(w, statusForErr(err), err.Error())
+		writeError(w, r, statusForErr(err), err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, n)
+	writeResponse(w, r, http.StatusOK, n)
 }
 
 func (h *Handler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	title, err := note.TitleFromString(r.PathValue("title"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req updateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid body")
 		return
 	}
 	n, err := h.store.Update(title, req.Value)
 	if err != nil {
-		writeError(w, statusForErr(err), err.Error())
+		writeError(w, r, statusForErr(err), err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, n)
+	writeResponse(w, r, http.StatusOK, n)
 }
 
 func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	title, err := note.TitleFromString(r.PathValue("title"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := h.store.Delete(title); err != nil {
-		writeError(w, statusForErr(err), err.Error())
+		writeError(w, r, statusForErr(err), err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -117,12 +128,14 @@ func statusForErr(err error) int {
 	return http.StatusInternalServerError
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+func writeResponse(w http.ResponseWriter, r *http.Request, status int, v any) {
+	if wantsXML(r) {
+		writeXML(w, status, v)
+		return
+	}
+	writeJSON(w, status, v)
 }
 
-func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, errorResponse{Error: msg})
+func writeError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	writeResponse(w, r, status, errorResponse{Error: msg})
 }
