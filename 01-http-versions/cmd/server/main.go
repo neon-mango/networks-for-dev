@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -37,11 +38,15 @@ func main() {
 		Handler:   handler.Routes(),
 		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
 	}
+	ln09, err := net.Listen("tcp", ":8090")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	errCh := make(chan error, len(servers)+1)
+	errCh := make(chan error)
 	for _, srv := range servers {
 		go func(s *http.Server) {
 			log.Printf("listening on %s", s.Addr)
@@ -53,6 +58,12 @@ func main() {
 	go func() {
 		log.Printf("http/3 listening on udp %s", h3.Addr)
 		if err := h3.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+	}()
+	go func() {
+		log.Printf("http/0.9 listening on tcp %s", ln09.Addr())
+		if err := handler.ServeHTTP09(ln09); err != nil {
 			errCh <- err
 		}
 	}()
@@ -70,6 +81,9 @@ func main() {
 			}
 		}
 		if err := h3.Shutdown(shutdownCtx); err != nil {
+			log.Println(err)
+		}
+		if err := ln09.Close(); err != nil {
 			log.Println(err)
 		}
 	}
