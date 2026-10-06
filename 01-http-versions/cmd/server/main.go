@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	notespb "notes/grpc"
+	"notes/internal/cert"
 	"notes/internal/grpcapi"
 	"notes/internal/httpapi"
 	"notes/internal/storage"
@@ -28,7 +29,7 @@ func main() {
 	store := storage.New()
 	handler := httpapi.NewHandler(store)
 
-	cert, err := selfSignedCert()
+	c, err := cert.SelfSigned()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -40,7 +41,7 @@ func main() {
 	h3 := &http3.Server{
 		Addr:      ":8082",
 		Handler:   handler.Routes(),
-		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
+		TLSConfig: &tls.Config{Certificates: []tls.Certificate{c}},
 	}
 	ln09, err := net.Listen("tcp", ":8090")
 	if err != nil {

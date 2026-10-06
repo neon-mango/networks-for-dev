@@ -1,4 +1,4 @@
-package main
+package cert
 
 import (
 	"crypto/ecdsa"
@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func selfSignedCert() (tls.Certificate, error) {
+func SelfSigned() (tls.Certificate, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return tls.Certificate{}, err
